@@ -1,4 +1,4 @@
-//! Serves `karaoke.mp4` over http://127.0.0.1 with Range support.
+//! Serves song files (`karaoke.mp4`, `cover.jpg`) over http://127.0.0.1 with Range support.
 //! Why: WebKitGTK (Linux) can't play <video> from Tauri's asset:// protocol (MediaError 4).
 //! Bound to localhost only, and every URL carries a random per-run token.
 use crate::library;
@@ -34,10 +34,12 @@ pub fn start(app: AppHandle) -> std::io::Result<Server> {
     Ok(Server { base })
 }
 
+/// Only these files are served: URL is `<base>/<id>/<file>`.
+const SERVED: [(&str, &str); 2] = [("karaoke.mp4", "video/mp4"), ("cover.jpg", "image/jpeg")];
+
 #[tauri::command]
-pub fn video_url(app: AppHandle, server: State<Server>, id: String) -> Result<String, String> {
-    library::dir(&app, &id)?; // validates the id
-    Ok(format!("{}/{id}.mp4", server.base))
+pub fn media_base(server: State<Server>) -> String {
+    server.base.clone()
 }
 
 async fn handle(app: &AppHandle, mut s: TcpStream, token: &str) -> anyhow::Result<()> {
@@ -63,11 +65,14 @@ async fn handle(app: &AppHandle, mut s: TcpStream, token: &str) -> anyhow::Resul
         .strip_prefix('/')
         .and_then(|p| p.strip_prefix(token))
         .and_then(|p| p.strip_prefix('/'))
-        .and_then(|p| p.strip_suffix(".mp4"))
-        .and_then(|id| library::dir(app, id).ok())
+        .and_then(|p| p.split_once('/'))
+        .and_then(|(id, name)| {
+            let (_, mime) = SERVED.iter().find(|(n, _)| *n == name)?;
+            Some((library::dir(app, id).ok()?.join(name), *mime))
+        })
         .filter(|_| method == "GET" || method == "HEAD");
-    let Some(mut f) = (match file {
-        Some(dir) => tokio::fs::File::open(dir.join("karaoke.mp4")).await.ok(),
+    let Some((mut f, mime)) = (match file {
+        Some((path, mime)) => tokio::fs::File::open(path).await.ok().map(|f| (f, mime)),
         None => None,
     }) else {
         return reply(&mut s, "404 Not Found", "").await;
@@ -84,7 +89,7 @@ async fn handle(app: &AppHandle, mut s: TcpStream, token: &str) -> anyhow::Resul
         },
     };
     let mut head = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: video/mp4\r\nAccept-Ranges: bytes\r\nContent-Length: {}\r\nConnection: close\r\n",
+        "HTTP/1.1 {status}\r\nContent-Type: {mime}\r\nAccept-Ranges: bytes\r\nContent-Length: {}\r\nConnection: close\r\n",
         end - start + 1
     );
     if range.is_some() {

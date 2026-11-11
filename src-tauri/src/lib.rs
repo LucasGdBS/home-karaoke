@@ -27,7 +27,7 @@ pub fn run() {
             library::delete,
             library::set_offset,
             library::lyrics,
-            stream::video_url,
+            stream::media_base,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

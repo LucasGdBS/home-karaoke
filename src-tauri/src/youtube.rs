@@ -47,9 +47,7 @@ pub async fn download(
     dir: &Path,
     mut on_progress: impl FnMut(f32),
 ) -> anyhow::Result<serde_json::Value> {
-    let mut child = tools::ytdlp_cmd(app)
-        .arg("--ffmpeg-location")
-        .arg(tools::ffmpeg())
+    let mut child = cover_cmd(app, dir)
         .args(["-f", "bv*+ba/b", "-S", "res:720,vcodec:h264,acodec:m4a"])
         .args(["--merge-output-format", "mp4", "--remux-video", "mp4"])
         .args(["--write-info-json", "--no-playlist", "--newline", "--no-warnings"])
@@ -82,4 +80,29 @@ pub async fn download(
     }
     let info = std::fs::read(dir.join("video.info.json")).context("info.json não encontrado")?;
     Ok(serde_json::from_slice(&info)?)
+}
+
+/// yt-dlp set up to also save the video thumbnail as `<dir>/cover.jpg`.
+fn cover_cmd(app: &AppHandle, dir: &Path) -> tokio::process::Command {
+    let mut c = tools::ytdlp_cmd(app);
+    c.arg("--ffmpeg-location")
+        .arg(tools::ffmpeg())
+        .args(["--write-thumbnail", "--convert-thumbnails", "jpg", "-o"])
+        .arg(format!("thumbnail:{}", dir.join("cover.%(ext)s").display()))
+        .current_dir(dir); // yt-dlp converts the thumbnail in the cwd before moving it
+    c
+}
+
+/// Only the thumbnail, for songs downloaded before covers existed.
+pub async fn download_cover(app: &AppHandle, id: &str, dir: &Path) -> anyhow::Result<()> {
+    let out = cover_cmd(app, dir)
+        .args(["--skip-download", "--no-warnings"])
+        .arg(format!("https://www.youtube.com/watch?v={id}"))
+        .output()
+        .await
+        .context("não consegui rodar o yt-dlp")?;
+    if !out.status.success() {
+        bail!("yt-dlp falhou: {}", String::from_utf8_lossy(&out.stderr).trim());
+    }
+    Ok(())
 }
