@@ -68,6 +68,9 @@ pub fn ytdlp_cmd(app: &AppHandle) -> tokio::process::Command {
 pub fn http() -> reqwest::Client {
     reqwest::Client::builder()
         .user_agent("home-karaoke/0.1")
+        // a stalled server must not freeze the download queue; no total timeout: the model is 66MB
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(30))
         .build()
         .expect("http client")
 }

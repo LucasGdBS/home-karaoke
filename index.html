@@ -8,30 +8,84 @@
     <script type="module" src="/src/main.ts" defer></script>
   </head>
   <body>
-    <section id="setup" class="page" hidden>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8" /></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></symbol>
+      <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14" /></symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6" /></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none" /></symbol>
+    </svg>
+
+    <section id="setup" class="setup" hidden>
+      <div class="logo"><svg><use href="#i-mic" /></svg></div>
       <h1>Karaoke Home</h1>
-      <p>Primeira vez: baixando as ferramentas (yt-dlp, deno e o modelo de IA). Só acontece uma vez.</p>
+      <p class="muted">Primeira vez: baixando as ferramentas (yt-dlp, deno e o modelo de IA). Só acontece uma vez.</p>
       <p id="setup-item"></p>
       <progress id="setup-bar" max="1" value="0"></progress>
       <p id="setup-error" class="error"></p>
-      <button id="setup-retry" hidden>Tentar de novo</button>
+      <button id="setup-retry" class="primary" hidden>Tentar de novo</button>
     </section>
 
-    <main id="home" class="page" hidden>
-      <header>
-        <h1>Karaoke Home</h1>
-        <button id="update-ytdlp" class="ghost">Atualizar yt-dlp</button>
+    <div id="home" class="app" hidden>
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo"><svg><use href="#i-mic" /></svg></div>
+          <div>
+            <h1>Karaoke Home</h1>
+            <span id="ready-count" class="muted"></span>
+          </div>
+        </div>
+        <button id="open-search" class="primary big">
+          <svg><use href="#i-search" /></svg>
+          Buscar e baixar música
+        </button>
       </header>
+
+      <main class="library">
+        <h2>Sua biblioteca</h2>
+        <p id="library-empty" class="empty">Nenhuma música pronta ainda. Clique em <strong>Buscar e baixar música</strong> para começar.</p>
+        <div id="gallery" class="gallery"></div>
+      </main>
+
+      <button id="statusbar" class="statusbar" aria-expanded="false" aria-controls="queue">
+        <span class="status-icon"><svg><use href="#i-download" /></svg></span>
+        <span class="status-text">
+          <span id="status-title"></span>
+          <span id="status-sub" class="muted"></span>
+        </span>
+        <span id="status-track" class="track"><span id="status-fill"></span></span>
+        <span class="status-right">
+          <span id="status-count" class="pill"></span>
+          <span class="accent-text"><span id="status-toggle">Ver fila</span> <svg class="chev"><use href="#i-chevron" /></svg></span>
+        </span>
+      </button>
+
+      <section id="queue" class="queue" aria-label="Fila de downloads" hidden>
+        <h3>Fila</h3>
+        <p id="queue-empty" class="muted">Nada na fila.</p>
+        <ol id="queue-list"></ol>
+      </section>
+    </div>
+
+    <dialog id="search" class="search" aria-label="Buscar música">
+      <div class="search-head">
+        <h3>Buscar no YouTube</h3>
+        <button id="close-search" class="icon" aria-label="Fechar busca"><svg><use href="#i-close" /></svg></button>
+      </div>
       <form id="search-form">
-        <input id="q" placeholder="Digite uma música…" autocomplete="off" aria-label="Buscar música" />
-        <button>Buscar</button>
+        <label for="q" class="sr-only">Nome da música ou artista</label>
+        <input id="q" placeholder="Nome da música ou artista…" autocomplete="off" />
+        <button class="primary">Buscar</button>
       </form>
       <p id="search-status" class="muted"></p>
-      <ul id="results" class="list"></ul>
-      <h2>Minhas músicas</h2>
-      <p id="library-empty" class="muted">Nenhuma música ainda. Busque uma acima.</p>
-      <ul id="library" class="list"></ul>
-    </main>
+      <ul id="results"></ul>
+      <footer class="search-foot">
+        <span class="muted">A busca parou de funcionar?</span>
+        <button id="update-ytdlp" class="link">Atualizar yt-dlp</button>
+      </footer>
+    </dialog>
 
     <section id="player" hidden>
       <video id="video"></video>

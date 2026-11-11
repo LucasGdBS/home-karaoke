@@ -7,6 +7,7 @@ type Meta = {
   id: string;
   title: string;
   artist: string | null;
+  track: string | null;
   duration: number;
   status: string;
   error: string | null;
@@ -32,6 +33,20 @@ function button(text: string, onclick: () => void, cls = "") {
   b.onclick = onclick;
   return b;
 }
+function icon(name: string) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", `#i-${name}`);
+  svg.append(use);
+  return svg;
+}
+function iconButton(name: string, label: string, onclick: () => void) {
+  const b = button("", onclick, "icon");
+  b.setAttribute("aria-label", label);
+  b.append(icon(name));
+  return b;
+}
 
 // ---------- setup ----------
 async function runSetup() {
@@ -50,65 +65,192 @@ async function runSetup() {
   }
 }
 
-// ---------- library ----------
+// ---------- state ----------
+let mediaBase = ""; // http://127.0.0.1:<port>/<token>, served by stream.rs
 const songs = new Map<string, Meta>();
-const progress = new Map<string, number>();
-const STATUS: Record<string, string> = {
-  queued: "na fila",
-  downloading: "baixando",
-  downloaded: "esperando a IA",
-  separating: "tirando a voz",
-  ready: "pronta",
-  error: "erro",
+/** Progress of the current stage, with where it started, to estimate time left. */
+const progress = new Map<string, { status: string; p: number; t0: number; p0: number }>();
+const BUSY = ["separating", "downloading"];
+const STAGE: Record<string, string> = {
+  separating: "Tirando a voz",
+  downloading: "Baixando",
+  downloaded: "Esperando a IA",
+  queued: "Na fila",
+  error: "Erro",
 };
+const RANK = ["separating", "downloading", "downloaded", "queued", "error"];
 
-function renderLibrary() {
-  const items = [...songs.values()].sort((a, b) => a.title.localeCompare(b.title));
-  $("library-empty").hidden = items.length > 0;
-  $("library").replaceChildren(
+const songTitle = (m: Meta) => m.track ?? m.title;
+const initials = (t: string) =>
+  t.split(/\s+/).filter((w) => /\p{L}/u.test(w[0] ?? "")).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+
+function eta(id: string) {
+  const g = progress.get(id);
+  if (!g || g.p - g.p0 < 0.02) return "calculando…";
+  // shortcut: yt-dlp downloads video then audio, so a download's estimate covers the current part only
+  const secs = ((Date.now() - g.t0) / 1000 / (g.p - g.p0)) * (1 - g.p);
+  return `faltam ~${fmt(secs)}`;
+}
+const pct = (id: string) => `${Math.round((progress.get(id)?.p ?? 0) * 100)}%`;
+
+// ---------- gallery ----------
+function renderGallery() {
+  const ready = [...songs.values()]
+    .filter((m) => m.status === "ready")
+    .sort((a, b) => songTitle(a).localeCompare(songTitle(b)));
+  $("ready-count").textContent =
+    ready.length === 1 ? "1 música pronta para cantar" : `${ready.length} músicas prontas para cantar`;
+  $("library-empty").hidden = ready.length > 0;
+  $("gallery").replaceChildren(...ready.map(card));
+}
+
+function card(m: Meta) {
+  const title = songTitle(m);
+  const c = el("article", "", "card");
+
+  const cover = button("", () => play(m), "cover");
+  cover.setAttribute("aria-label", `Cantar ${title}`);
+  const img = el("img");
+  img.src = `${mediaBase}/${m.id}/cover.jpg`;
+  img.alt = "";
+  img.onerror = () => img.remove(); // no cover yet: the initials underneath show
+  const play_ = el("span", "", "play");
+  const circle = el("span");
+  circle.append(icon("play"));
+  play_.append(circle);
+  cover.append(el("span", initials(title), "initials"), img, play_, el("span", fmt(m.duration), "duration"));
+
+  const info = el("div", "", "card-info");
+  info.append(el("strong", title), el("span", m.artist ?? "", "muted"));
+  const [cls, label] = !m.has_lyrics
+    ? ["none", "Sem letra"]
+    : m.synced
+      ? ["synced", "Letra sincronizada"]
+      : ["plain", "Letra sem sincronia"];
+  info.append(el("span", label, `badge ${cls}`));
+
+  const body = el("div", "", "card-body");
+  body.append(info, iconButton("trash", `Apagar ${title}`, () => remove(m)));
+  c.append(cover, body);
+  return c;
+}
+
+async function remove(m: Meta) {
+  if (!confirm(`Apagar "${songTitle(m)}"?`)) return;
+  try {
+    await invoke("delete", { id: m.id });
+    songs.delete(m.id);
+    render();
+  } catch (e) {
+    alert(errText(e));
+  }
+}
+
+// ---------- status bar + queue ----------
+function queueItems() {
+  return [...songs.values()]
+    .filter((m) => m.status !== "ready")
+    .sort((a, b) => RANK.indexOf(a.status) - RANK.indexOf(b.status) || songTitle(a).localeCompare(songTitle(b)));
+}
+
+function renderQueue() {
+  const items = queueItems();
+  const active = items.find((m) => BUSY.includes(m.status));
+  const errors = items.filter((m) => m.status === "error").length;
+  const waiting = items.filter((m) => m !== active && m.status !== "error").length;
+
+  if (active) {
+    $("status-title").textContent = `${STAGE[active.status]} · ${songTitle(active)}`;
+    $("status-sub").textContent = `${pct(active.id)} · ${eta(active.id)}`;
+    $("status-fill").style.width = pct(active.id);
+  } else {
+    $("status-title").textContent = "Nenhum download em andamento";
+    $("status-sub").textContent = errors ? `${errors} com erro, veja a fila` : "Tudo pronto";
+  }
+  $("status-track").hidden = !active;
+  $("status-count").hidden = waiting === 0;
+  $("status-count").textContent = `+${waiting} na fila`;
+
+  $("queue-empty").hidden = items.length > 0;
+  $("queue-list").replaceChildren(
     ...items.map((m) => {
-      const li = el("li");
-      const info = el("div", "", "info");
-      info.append(el("strong", m.title), el("span", fmt(m.duration), "muted"));
-      const p = progress.get(m.id);
-      const busy = m.status === "downloading" || m.status === "separating";
-      const status = el("span", STATUS[m.status] ?? m.status, `status ${m.status}`);
-      if (busy && p !== undefined) status.textContent += ` ${Math.round(p * 100)}%`;
-      if (m.status === "ready" && !m.has_lyrics) status.textContent += " · sem letra";
-      if (m.error) status.title = m.error;
-      const actions = el("div", "", "actions");
-      if (m.status === "ready") actions.append(button("▶ Cantar", () => play(m)));
-      if (m.status === "error")
-        actions.append(button("Tentar de novo", () => enqueue(m.id, m.title, m.duration), "ghost"));
-      actions.append(
-        button("Apagar", async () => {
-          if (!confirm(`Apagar "${m.title}"?`)) return;
-          try {
-            await invoke("delete", { id: m.id });
-            songs.delete(m.id);
-            renderLibrary();
-          } catch (e) {
-            alert(errText(e));
-          }
-        }, "ghost"),
-      );
-      li.append(info, status, actions);
+      const kind = m === active ? "active" : m.status === "error" ? "error" : BUSY.includes(m.status) ? "" : "waiting";
+      const li = el("li", "", kind);
+      const row = el("div", "", "q-row");
+      row.append(el("span", "", "dot"), el("strong", songTitle(m)), el("span", STAGE[m.status] ?? m.status, "q-stage"));
+      li.append(row);
+      if (BUSY.includes(m.status)) {
+        const detail = el("div", "", "q-detail");
+        const track = el("span", "", "track");
+        const fill = el("span");
+        fill.style.width = pct(m.id);
+        track.append(fill);
+        detail.append(track, el("span", `${pct(m.id)} · ${eta(m.id)}`, "muted"));
+        li.append(detail);
+      }
+      if (m.status === "error") {
+        const detail = el("div", "", "q-detail");
+        const msg = el("span", m.error ?? "erro desconhecido", "error");
+        msg.title = m.error ?? "";
+        detail.append(
+          msg,
+          button("Tentar de novo", () => enqueue(m.id, m.title, m.duration), "outline"),
+          iconButton("trash", `Remover ${songTitle(m)}`, () => remove(m)),
+        );
+        li.append(detail);
+      }
       return li;
     }),
   );
 }
 
+function render() {
+  renderGallery();
+  renderQueue();
+}
+
+$("statusbar").onclick = () => {
+  const open = $("queue").hidden;
+  $("queue").hidden = !open;
+  $("statusbar").setAttribute("aria-expanded", String(open));
+  $("status-toggle").textContent = open ? "Fechar fila" : "Ver fila";
+};
+
 async function enqueue(id: string, title: string, duration: number) {
   try {
     const m = await invoke<Meta>("enqueue", { id, title, duration });
     songs.set(m.id, m);
-    renderLibrary();
+    render();
   } catch (e) {
     alert(errText(e));
   }
 }
 
 // ---------- search ----------
+const dialog = $<HTMLDialogElement>("search");
+$("open-search").onclick = () => {
+  dialog.showModal();
+  $<HTMLInputElement>("q").select();
+};
+$("close-search").onclick = () => dialog.close();
+// click on the backdrop closes. Block body: an on* handler returning false cancels the click (and the form submit)
+dialog.onclick = (e) => {
+  if (e.target === dialog) dialog.close();
+};
+
+function resultButton(r: SearchResult) {
+  const m = songs.get(r.id);
+  const label = !m || m.status === "error" ? "Baixar" : m.status === "ready" ? "Na biblioteca" : "Na fila ✓";
+  const b = button(label, async () => {
+    b.disabled = true;
+    b.textContent = "Na fila ✓";
+    b.className = "ghost";
+    await enqueue(r.id, r.title, r.duration);
+  }, label === "Baixar" ? "primary" : "ghost");
+  b.disabled = label !== "Baixar";
+  return b;
+}
+
 $("search-form").onsubmit = async (ev) => {
   ev.preventDefault();
   const q = $<HTMLInputElement>("q").value.trim();
@@ -121,19 +263,14 @@ $("search-form").onsubmit = async (ev) => {
     $("results").replaceChildren(
       ...results.map((r) => {
         const li = el("li");
+        const thumb = el("span", "", "thumb");
         const img = el("img");
         img.src = `https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`;
         img.alt = "";
-        const info = el("div", "", "info");
-        info.append(el("strong", r.title), el("span", `${r.channel} · ${fmt(r.duration)}`, "muted"));
-        const queued = songs.has(r.id) && songs.get(r.id)!.status !== "error";
-        const b = button(queued ? "Já está na lista" : "Baixar", async () => {
-          b.disabled = true;
-          b.textContent = "Na fila ✓";
-          await enqueue(r.id, r.title, r.duration);
-        });
-        b.disabled = queued;
-        li.append(img, info, b);
+        thumb.append(img, el("span", fmt(r.duration), "duration"));
+        const info = el("span", "", "r-info");
+        info.append(el("strong", r.title), el("span", r.channel, "muted"));
+        li.append(thumb, info, resultButton(r));
         return li;
       }),
     );
@@ -169,7 +306,7 @@ async function play(m: Meta) {
   $("plain").hidden = !(text && !m.synced);
   $("line-cur").textContent = text ? "" : "Letra não encontrada";
   $("line-next").textContent = "";
-  video.src = await invoke<string>("video_url", { id: m.id });
+  video.src = `${mediaBase}/${m.id}/karaoke.mp4`;
   show("player");
   await getCurrentWindow().setFullscreen(true);
   tick();
@@ -232,12 +369,15 @@ document.addEventListener("keydown", (e) => {
 // ---------- start ----------
 listen<Meta>("song-update", (e) => {
   songs.set(e.payload.id, e.payload);
-  if (e.payload.status !== "downloading" && e.payload.status !== "separating") progress.delete(e.payload.id);
-  renderLibrary();
+  render();
 });
-listen<{ id: string; progress: number }>("song-progress", (e) => {
-  progress.set(e.payload.id, e.payload.progress);
-  renderLibrary();
+listen<{ id: string; progress: number }>("song-progress", ({ payload: { id, progress: p } }) => {
+  const status = songs.get(id)?.status ?? "";
+  const g = progress.get(id);
+  // new stage, or the bar restarted (yt-dlp's second file): restart the estimate
+  if (!g || g.status !== status || p < g.p - 0.05) progress.set(id, { status, p, t0: Date.now(), p0: p });
+  else g.p = p;
+  renderQueue(); // not the gallery: rebuilding it on every tick would reload the covers
 });
 listen<{ item: string; progress: number }>("setup-progress", (e) => {
   $("setup-item").textContent = `Baixando ${e.payload.item}…`;
@@ -246,7 +386,8 @@ listen<{ item: string; progress: number }>("setup-progress", (e) => {
 
 (async () => {
   if (!(await invoke<boolean>("setup_status"))) await runSetup();
+  mediaBase = await invoke<string>("media_base");
   for (const m of await invoke<Meta[]>("list")) songs.set(m.id, m);
-  renderLibrary();
+  render();
   show("home");
 })();

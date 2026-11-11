@@ -33,9 +33,44 @@ pub fn start(app: AppHandle) -> Queue {
             _ => {}
         }
     }
+    tauri::async_runtime::spawn(backfill(app.clone()));
     tauri::async_runtime::spawn(download_worker(app.clone(), dl_rx, sep_tx));
     tauri::async_runtime::spawn(separate_worker(app, sep_rx));
     Queue(dl_tx)
+}
+
+/// On launch, ready songs missing a cover or lyrics try again: covers didn't exist in older
+/// versions, and lyrics may have failed on a network hiccup or been added to LRCLIB since.
+/// Offline: retried next launch.
+async fn backfill(app: AppHandle) {
+    for m in library::list_all(&app).into_iter().filter(|m| m.status == "ready") {
+        let Ok(dir) = library::dir(&app, &m.id) else { continue };
+        if !dir.join("cover.jpg").exists() {
+            match youtube::download_cover(&app, &m.id, &dir).await {
+                Ok(()) => {
+                    library::update(&app, &m.id, |_| {}); // emits song-update so the UI shows it
+                }
+                Err(e) => eprintln!("capa de {}: {e:#}", m.id),
+            }
+        }
+        if !m.has_lyrics {
+            if let Err(e) = fetch_lyrics(&app, &m, &dir).await {
+                eprintln!("letra de {}: {e:#}", m.id);
+            }
+        }
+    }
+}
+
+/// Saves `lyrics.lrc` and flags the song. Not finding any is Ok: the song plays without.
+async fn fetch_lyrics(app: &AppHandle, m: &library::Meta, dir: &std::path::Path) -> anyhow::Result<()> {
+    if let Some((text, synced)) = lyrics::fetch(&m.title, m.artist.as_deref(), m.track.as_deref(), m.duration).await? {
+        fs::write(dir.join("lyrics.lrc"), text)?;
+        library::update(app, &m.id, |m| {
+            m.has_lyrics = true;
+            m.synced = synced;
+        });
+    }
+    Ok(())
 }
 
 fn fail(app: &AppHandle, id: &str, e: anyhow::Error) {
@@ -76,17 +111,9 @@ async fn download_job(app: &AppHandle, id: &str) -> anyhow::Result<()> {
     })
     .context("música apagada")?;
 
-    // Missing lyrics is not fatal: the song still plays.
-    match lyrics::fetch(&m.title, m.artist.as_deref(), m.track.as_deref(), m.duration).await {
-        Ok(Some((text, synced))) => {
-            fs::write(dir.join("lyrics.lrc"), text)?;
-            library::update(app, id, |m| {
-                m.has_lyrics = true;
-                m.synced = synced;
-            });
-        }
-        Ok(None) => {}
-        Err(e) => eprintln!("letra de {id}: {e:#}"),
+    // Missing lyrics is not fatal: the song still plays, and `backfill` retries on next launch.
+    if let Err(e) = fetch_lyrics(app, &m, &dir).await {
+        eprintln!("letra de {id}: {e:#}");
     }
     Ok(())
 }
