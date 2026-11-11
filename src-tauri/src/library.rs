@@ -93,8 +93,3 @@ pub fn set_offset(app: AppHandle, id: String, ms: i64) -> Result<(), String> {
 pub fn lyrics(app: AppHandle, id: String) -> Result<Option<String>, String> {
     Ok(fs::read_to_string(dir(&app, &id)?.join("lyrics.lrc")).ok())
 }
-
-#[tauri::command]
-pub fn video_path(app: AppHandle, id: String) -> Result<PathBuf, String> {
-    Ok(dir(&app, &id)?.join("karaoke.mp4"))
-}

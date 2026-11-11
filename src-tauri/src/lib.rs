@@ -2,6 +2,7 @@ mod library;
 mod lyrics;
 mod pipeline;
 mod separate;
+mod stream;
 mod tools;
 mod youtube;
 
@@ -13,6 +14,7 @@ pub fn run() {
         .setup(|app| {
             let queue = pipeline::start(app.handle().clone());
             app.manage(queue);
+            app.manage(stream::start(app.handle().clone())?);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -25,7 +27,7 @@ pub fn run() {
             library::delete,
             library::set_offset,
             library::lyrics,
-            library::video_path,
+            stream::video_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

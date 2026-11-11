@@ -1,4 +1,4 @@
-import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { parseLrc, lineAt, type Line } from "./lrc.ts";
@@ -169,12 +169,22 @@ async function play(m: Meta) {
   $("plain").hidden = !(text && !m.synced);
   $("line-cur").textContent = text ? "" : "Letra não encontrada";
   $("line-next").textContent = "";
-  video.src = convertFileSrc(await invoke<string>("video_path", { id: m.id }));
+  video.src = await invoke<string>("video_url", { id: m.id });
   show("player");
   await getCurrentWindow().setFullscreen(true);
-  await video.play();
   tick();
+  video.play().catch((e) => showError(`${e}`));
 }
+
+function showError(msg: string) {
+  const err = video.error;
+  const detail = err ? ` (MediaError ${err.code}${err.message ? `: ${err.message}` : ""})` : "";
+  const codecs = video.canPlayType('video/mp4; codecs="avc1.4D401F, mp4a.40.2"') || "não";
+  $("line-cur").textContent = "Não consegui tocar o vídeo. Esc para voltar.";
+  $("line-next").textContent = `${msg}${detail} · suporta H.264/AAC: ${codecs}`;
+  lines = []; // keep the error on screen instead of lyrics
+}
+video.onerror = () => showError("erro ao carregar");
 
 function tick() {
   if (current && lines.length) {
