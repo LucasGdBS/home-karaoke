@@ -1,0 +1,42 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-22.04]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config
+      - name: ffmpeg sidecar (Linux)
+        if: runner.os == 'Linux'
+        run: bash scripts/fetch-ffmpeg.sh
+      - name: ffmpeg sidecar (Windows)
+        if: runner.os == 'Windows'
+        run: pwsh scripts/fetch-ffmpeg.ps1
+      - run: npm ci
+      - run: npm test
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Karaoke Home ${{ github.ref_name }}
+          releaseDraft: true

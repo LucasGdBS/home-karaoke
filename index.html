@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <title>Karaoke Home</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <section id="setup" class="page" hidden>
+      <h1>Karaoke Home</h1>
+      <p>Primeira vez: baixando as ferramentas (yt-dlp, deno e o modelo de IA). Só acontece uma vez.</p>
+      <p id="setup-item"></p>
+      <progress id="setup-bar" max="1" value="0"></progress>
+      <p id="setup-error" class="error"></p>
+      <button id="setup-retry" hidden>Tentar de novo</button>
+    </section>
+
+    <main id="home" class="page" hidden>
+      <header>
+        <h1>Karaoke Home</h1>
+        <button id="update-ytdlp" class="ghost">Atualizar yt-dlp</button>
+      </header>
+      <form id="search-form">
+        <input id="q" placeholder="Digite uma música…" autocomplete="off" aria-label="Buscar música" />
+        <button>Buscar</button>
+      </form>
+      <p id="search-status" class="muted"></p>
+      <ul id="results" class="list"></ul>
+      <h2>Minhas músicas</h2>
+      <p id="library-empty" class="muted">Nenhuma música ainda. Busque uma acima.</p>
+      <ul id="library" class="list"></ul>
+    </main>
+
+    <section id="player" hidden>
+      <video id="video"></video>
+      <div id="lyrics">
+        <p id="line-cur"></p>
+        <p id="line-next"></p>
+      </div>
+      <pre id="plain" hidden></pre>
+      <div id="hint"></div>
+    </section>
+  </body>
+</html>
