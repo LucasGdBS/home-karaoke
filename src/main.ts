@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getVersion } from "@tauri-apps/api/app";
 import { parseLrc, lineAt, type Line } from "./lrc.ts";
 import { randomScore, phrase, FLOP } from "./score.ts";
 import { drumroll, reveal } from "./sfx.ts";
@@ -525,6 +526,7 @@ listen<{ item: string; progress: number }>("setup-progress", (e) => {
 
 (async () => {
   if (!(await invoke<boolean>("setup_status"))) await runSetup();
+  getVersion().then((v) => ($("app-version").textContent = `v${v}`)).catch(() => {});
   mediaBase = await invoke<string>("media_base");
   for (const m of await invoke<Meta[]>("list")) songs.set(m.id, m);
   render();
