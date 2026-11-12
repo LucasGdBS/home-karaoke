@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Source of every app icon: regenerate with `npx tauri icon src-tauri/app-icon.svg` -->
+  <rect width="512" height="512" rx="112" fill="#0b1426"/>
+  <g transform="rotate(-32 256 280)">
+    <path d="M214 262h84l-14 186q-28 18-56 0z" fill="#ffb066"/>
+    <circle cx="256" cy="176" r="92" fill="#ff8a1f"/>
+    <rect x="204" y="250" width="104" height="28" rx="10" fill="#ffd9b0"/>
+  </g>
+  <path d="M352 96a96 96 0 0 1 70 70" fill="none" stroke="#ff8a1f" stroke-width="28" stroke-linecap="round"/>
+  <path d="M368 30a160 160 0 0 1 116 116" fill="none" stroke="#ff8a1f" stroke-width="28" stroke-linecap="round" opacity=".55"/>
+</svg>
