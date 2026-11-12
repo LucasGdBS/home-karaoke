@@ -62,8 +62,20 @@ async fn backfill(app: AppHandle) {
 }
 
 /// Saves `lyrics.lrc` and flags the song. Not finding any is Ok: the song plays without.
+/// Network errors are retried (2s, 4s): a single hiccup used to leave the song without lyrics.
 async fn fetch_lyrics(app: &AppHandle, m: &library::Meta, dir: &std::path::Path) -> anyhow::Result<()> {
-    if let Some((text, synced)) = lyrics::fetch(&m.title, m.artist.as_deref(), m.track.as_deref(), m.duration).await? {
+    let mut wait = 2;
+    let found = loop {
+        match lyrics::fetch(&m.title, m.artist.as_deref(), m.track.as_deref(), m.duration).await {
+            Err(e) if wait <= 4 => {
+                eprintln!("letra de {} (tentando de novo em {wait}s): {e:#}", m.id);
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                wait *= 2;
+            }
+            r => break r?,
+        }
+    };
+    if let Some((text, synced)) = found {
         fs::write(dir.join("lyrics.lrc"), text)?;
         library::update(app, &m.id, |m| {
             m.has_lyrics = true;
@@ -71,6 +83,15 @@ async fn fetch_lyrics(app: &AppHandle, m: &library::Meta, dir: &std::path::Path)
         });
     }
     Ok(())
+}
+
+/// "Buscar letra" button: tries LRCLIB again now. Returns whether lyrics were found.
+#[tauri::command]
+pub async fn find_lyrics(app: AppHandle, id: String) -> Result<bool, String> {
+    let dir = library::dir(&app, &id)?;
+    let m = library::load(&app, &id).ok_or("música não encontrada")?;
+    fetch_lyrics(&app, &m, &dir).await.map_err(|e| format!("{e:#}"))?;
+    Ok(library::load(&app, &id).is_some_and(|m| m.has_lyrics))
 }
 
 fn fail(app: &AppHandle, id: &str, e: anyhow::Error) {
