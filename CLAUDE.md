@@ -15,6 +15,7 @@ npx tsc                                       # frontend typecheck
 - `pipeline.rs`: two queues. The download worker (yt-dlp + lyrics) feeds the separation worker (ONNX + ffmpeg mux). Status lives in `songs/<id>/meta.json` (`queued → downloading → downloaded → separating → ready | error`); in-flight songs resume on launch; `backfill` retries missing covers/lyrics on launch.
 - `stream.rs`: localhost HTTP server (random port + token, Range support) serving a whitelist (`SERVED`) of song files. The frontend builds URLs from `media_base`.
 - `tools.rs`: yt-dlp, deno and the model are downloaded to app data on first run (yt-dlp must stay updatable); ffmpeg is a Tauri sidecar resolved next to the exe.
+- `sync.rs`: automatic lyrics offset, correlating the LRC's "singing now" pattern with `vocals.m4a` loudness (±15s). Runs once per song (`auto_synced`), only while `lyrics_offset_ms == 0`, so manual `[`/`]` adjustments always win.
 - `separate.rs`: MDX constants must match the model's UVR config. Vocals = mix − instrumental (no second model pass).
 - Frontend: `main.ts` holds all UI; pure logic lives in small tested modules (`lrc.ts`, `score.ts`, `guide.ts`).
 

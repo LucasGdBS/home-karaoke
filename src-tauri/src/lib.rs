@@ -3,6 +3,7 @@ mod lyrics;
 mod pipeline;
 mod separate;
 mod stream;
+mod sync;
 mod tools;
 mod youtube;
 
