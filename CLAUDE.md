@@ -30,4 +30,5 @@ npx tsc                                       # frontend typecheck
 
 ## Workflow
 - Feature branches off `develop`, PR into `develop`; `develop` → `main` is a release. Commit messages in Portuguese.
+- Never add `Co-Authored-By` lines to commits, and never add "Generated with Claude Code" (or any Claude attribution/session link) to commits or PR descriptions.
 - Releases are automatic (`.github/workflows/instaladores.yml`): a merge into `main` touching the app tags highest `vX.Y.Z` + 1 patch and publishes the installers; pushing a `vX.Y.Z` tag releases that exact version. Installer version comes from the tag, not `tauri.conf.json`. PRs into `develop` touching the app run tests + build (~40 min, Windows minutes count double).
