@@ -71,3 +71,7 @@ A versão do instalador é sempre a da tag (o `version` do `tauri.conf.json` só
 - **Música sem letra ou sem capa**: o app tenta de novo sozinho ao abrir.
 - **Sem voz guia**: músicas baixadas antes da voz guia não têm a voz guardada; apague e baixe de novo.
 - **Letra fora do tempo**: `[` adianta e `]` atrasa a letra no player; o ajuste manual nunca é sobrescrito pela sincronia automática.
+
+## Licença
+
+[MIT](LICENSE). O ffmpeg empacotado é distribuído sob LGPL, como binário separado.
