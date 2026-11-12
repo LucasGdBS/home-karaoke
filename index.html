@@ -15,6 +15,8 @@
       <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 15 6-6 6 6" /></symbol>
       <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></symbol>
       <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></symbol>
+      <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" /></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
       <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none" /></symbol>
     </svg>
 
@@ -37,11 +39,23 @@
             <span id="ready-count" class="muted"></span>
           </div>
         </div>
-        <button id="open-search" class="primary big">
-          <svg><use href="#i-search" /></svg>
-          Buscar e baixar música
-        </button>
+        <div class="top-actions">
+          <button id="open-downloads" class="dl-button" aria-label="Downloads" aria-expanded="false" aria-controls="queue">
+            <svg><use href="#i-download" /></svg>
+            <span id="dl-count" class="count" hidden></span>
+          </button>
+          <button id="open-search" class="primary big">
+            <svg><use href="#i-search" /></svg>
+            Buscar e baixar música
+          </button>
+        </div>
       </header>
+
+      <section id="queue" class="popover queue" aria-label="Downloads" hidden>
+        <h3>Downloads</h3>
+        <p id="queue-empty" class="muted">Nada baixando.</p>
+        <ol id="queue-list"></ol>
+      </section>
 
       <main class="library">
         <h2>Sua biblioteca</h2>
@@ -49,25 +63,40 @@
         <div id="gallery" class="gallery"></div>
       </main>
 
-      <button id="statusbar" class="statusbar" aria-expanded="false" aria-controls="queue">
-        <span class="status-icon"><svg><use href="#i-download" /></svg></span>
+      <button id="statusbar" class="statusbar" aria-expanded="false" aria-controls="lineup">
+        <span class="status-icon"><svg><use href="#i-mic" /></svg></span>
         <span class="status-text">
-          <span id="status-title"></span>
-          <span id="status-sub" class="muted"></span>
+          <span id="lineup-next"></span>
+          <span id="lineup-after" class="muted"></span>
         </span>
-        <span id="status-track" class="track"><span id="status-fill"></span></span>
         <span class="status-right">
-          <span id="status-count" class="pill"></span>
+          <span id="lineup-count" class="pill"></span>
           <span class="accent-text"><span id="status-toggle">Ver fila</span> <svg class="chev"><use href="#i-chevron" /></svg></span>
         </span>
       </button>
 
-      <section id="queue" class="queue" aria-label="Fila de downloads" hidden>
-        <h3>Fila</h3>
-        <p id="queue-empty" class="muted">Nada na fila.</p>
-        <ol id="queue-list"></ol>
+      <section id="lineup" class="popover" aria-label="Fila de cantores" hidden>
+        <div class="lineup-head">
+          <h3>Fila de cantores</h3>
+          <button id="lineup-start" class="primary"><svg><use href="#i-play" /></svg> Começar</button>
+        </div>
+        <p id="lineup-empty" class="muted">Ninguém na fila. Use o + nos cards para adicionar.</p>
+        <ol id="lineup-list"></ol>
       </section>
     </div>
+
+    <dialog id="ask" class="ask" aria-labelledby="ask-title">
+      <form id="ask-form" method="dialog">
+        <h3 id="ask-title"></h3>
+        <p id="ask-text" class="muted"></p>
+        <label for="ask-input" id="ask-label" class="sr-only"></label>
+        <input id="ask-input" autocomplete="off" />
+        <div class="ask-actions">
+          <button id="ask-cancel" type="button" class="ghost">Cancelar</button>
+          <button id="ask-ok" value="ok" class="primary">OK</button>
+        </div>
+      </form>
+    </dialog>
 
     <dialog id="search" class="search" aria-label="Buscar música">
       <div class="search-head">
@@ -104,6 +133,8 @@
         <p class="score-label">Sua nota</p>
         <p id="score-value" aria-live="polite"></p>
         <p id="score-phrase"></p>
+        <p id="score-next" hidden></p>
+        <button id="score-now" class="primary big" hidden>Começar agora</button>
         <button id="score-done" class="primary big">Voltar para a galeria</button>
       </div>
     </section>
