@@ -465,6 +465,12 @@ async function stop() {
   show("home");
 }
 
+// Says which way: a bare "-0.25s" left people pressing the key that made it worse (#8).
+function offsetLabel(ms: number) {
+  const s = (Math.abs(ms) / 1000).toFixed(2).replace(".", ",");
+  return ms === 0 ? "Letra no tempo original" : `Letra ${s}s mais ${ms > 0 ? "tarde" : "cedo"}`;
+}
+
 function hint(text: string) {
   $("hint").textContent = text;
   $("hint").classList.add("on");
@@ -488,7 +494,7 @@ document.addEventListener("keydown", (e) => {
     // positive offset = lyrics show up later
     current.lyrics_offset_ms += e.key === "]" ? 250 : -250;
     songs.set(current.id, current);
-    hint(`Letra: ${(current.lyrics_offset_ms / 1000).toFixed(2)}s`);
+    hint(offsetLabel(current.lyrics_offset_ms));
     invoke("set_offset", { id: current.id, ms: current.lyrics_offset_ms }).catch(() => {});
   } else if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key.toLowerCase() === "v") {
     e.preventDefault(); // also when the slider has focus: ↑/↓ must always step 10% and show the hint
