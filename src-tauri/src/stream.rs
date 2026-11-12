@@ -1,4 +1,4 @@
-//! Serves song files (`karaoke.mp4`, `cover.jpg`) over http://127.0.0.1 with Range support.
+//! Serves song files (`karaoke.mp4`, `cover.jpg`, `vocals.m4a`) over http://127.0.0.1 with Range support.
 //! Why: WebKitGTK (Linux) can't play <video> from Tauri's asset:// protocol (MediaError 4).
 //! Bound to localhost only, and every URL carries a random per-run token.
 use crate::library;
@@ -35,7 +35,8 @@ pub fn start(app: AppHandle) -> std::io::Result<Server> {
 }
 
 /// Only these files are served: URL is `<base>/<id>/<file>`.
-const SERVED: [(&str, &str); 2] = [("karaoke.mp4", "video/mp4"), ("cover.jpg", "image/jpeg")];
+const SERVED: [(&str, &str); 3] =
+    [("karaoke.mp4", "video/mp4"), ("cover.jpg", "image/jpeg"), ("vocals.m4a", "audio/mp4")];
 
 #[tauri::command]
 pub fn media_base(server: State<Server>) -> String {
