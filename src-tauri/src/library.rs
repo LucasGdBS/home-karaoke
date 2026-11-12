@@ -18,6 +18,8 @@ pub struct Meta {
     pub lyrics_offset_ms: i64,
     pub has_lyrics: bool,
     pub synced: bool,
+    /// `vocals.m4a` exists (songs processed before the guide voice don't have it)
+    pub has_vocals: bool,
 }
 
 pub fn songs_dir(app: &AppHandle) -> PathBuf {

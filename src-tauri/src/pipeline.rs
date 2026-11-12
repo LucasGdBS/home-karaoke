@@ -137,6 +137,7 @@ async fn separate_worker(app: AppHandle, mut rx: UnboundedReceiver<String>) {
                 library::update(&app, &id, |m| {
                     m.status = "ready".into();
                     m.error = None;
+                    m.has_vocals = true;
                 });
             }
             Err(e) => fail(&app, &id, e),
@@ -148,6 +149,7 @@ fn separate_job(app: &AppHandle, id: &str, session: &mut Option<Session>) -> any
     let dir = library::dir(app, id).map_err(anyhow::Error::msg)?;
     let video = dir.join("video.mp4");
     let raw = dir.join("instrumental.f32");
+    let raw_vocals = dir.join("vocals.f32");
 
     let out = tools::std_cmd(tools::ffmpeg())
         .args(["-v", "error", "-i"])
@@ -156,7 +158,7 @@ fn separate_job(app: &AppHandle, id: &str, session: &mut Option<Session>) -> any
         .output()
         .context("não consegui rodar o ffmpeg")?;
     ensure!(out.status.success(), "ffmpeg (decodificar): {}", String::from_utf8_lossy(&out.stderr));
-    let mix: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
+    let mut mix: Vec<f32> = out.stdout.chunks_exact(4).map(|b| f32::from_le_bytes(b.try_into().unwrap())).collect();
     drop(out);
 
     if session.is_none() {
@@ -165,9 +167,24 @@ fn separate_job(app: &AppHandle, id: &str, session: &mut Option<Session>) -> any
     let inst = separate::separate(session.as_mut().unwrap(), &mix, |p| {
         let _ = app.emit("song-progress", Progress { id, progress: p });
     })?;
+    // The guide voice for free: whatever the model removed. Reuses the mix buffer.
+    for (m, i) in mix.iter_mut().zip(&inst) {
+        *m -= *i;
+    }
+    let f32_bytes = |v: &[f32]| v.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>();
+    fs::write(&raw_vocals, f32_bytes(&mix))?;
     drop(mix);
-    fs::write(&raw, inst.iter().flat_map(|x| x.to_le_bytes()).collect::<Vec<u8>>())?;
+    fs::write(&raw, f32_bytes(&inst))?;
     drop(inst);
+
+    let out = tools::std_cmd(tools::ffmpeg())
+        .args(["-v", "error", "-y", "-f", "f32le", "-ar", "44100", "-ac", "2", "-i"])
+        .arg(&raw_vocals)
+        .args(["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart"])
+        .arg(dir.join("vocals.m4a"))
+        .output()
+        .context("não consegui rodar o ffmpeg")?;
+    ensure!(out.status.success(), "ffmpeg (voz): {}", String::from_utf8_lossy(&out.stderr));
 
     // One file with the original video + instrumental audio: they can never drift apart.
     let out = tools::std_cmd(tools::ffmpeg())
@@ -182,6 +199,7 @@ fn separate_job(app: &AppHandle, id: &str, session: &mut Option<Session>) -> any
         .context("não consegui rodar o ffmpeg")?;
     ensure!(out.status.success(), "ffmpeg (juntar): {}", String::from_utf8_lossy(&out.stderr));
     fs::remove_file(&raw)?;
+    fs::remove_file(&raw_vocals)?;
     fs::remove_file(&video)?;
     let _ = fs::remove_file(dir.join("video.info.json"));
     Ok(())

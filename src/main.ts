@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { parseLrc, lineAt, type Line } from "./lrc.ts";
 import { randomScore, phrase, FLOP } from "./score.ts";
 import { drumroll, reveal } from "./sfx.ts";
+import { shouldResync } from "./guide.ts";
 
 type Meta = {
   id: string;
@@ -16,6 +17,7 @@ type Meta = {
   lyrics_offset_ms: number;
   has_lyrics: boolean;
   synced: boolean;
+  has_vocals: boolean;
 };
 type SearchResult = { id: string; title: string; duration: number; channel: string };
 
@@ -300,6 +302,64 @@ let lines: Line[] = [];
 let raf = 0;
 let hintTimer = 0;
 
+// ---------- guide voice ----------
+const guide = $<HTMLAudioElement>("guide");
+const guideVol = $<HTMLInputElement>("guide-vol");
+let hasGuide = false;
+let guideCtlTimer = 0;
+let drifts: number[] = []; // recent guide−video gaps, for shouldResync()
+let lastResync = 0;
+const loadPref = (k: string) => {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+};
+const savePref = (k: string, v: string) => {
+  try {
+    localStorage.setItem(k, v);
+  } catch {
+    /* private mode etc.: the level just isn't remembered */
+  }
+};
+let guideLevel = 0;
+let guideLast = 0.3; // what V brings back after muting
+
+function setGuide(level: number, announce = true) {
+  guideLevel = Math.round(Math.min(1, Math.max(0, level)) * 10) / 10;
+  if (guideLevel > 0) guideLast = guideLevel;
+  guide.volume = guideLevel;
+  guideVol.value = String(guideLevel * 100);
+  const pct = `${Math.round(guideLevel * 100)}%`;
+  $("guide-pct").textContent = pct;
+  savePref("guideVolume", String(guideLevel));
+  if (announce) hint(`Voz guia: ${pct}`);
+}
+setGuide(Number(loadPref("guideVolume")) || 0, false);
+guideVol.oninput = () => setGuide(Number(guideVol.value) / 100, false);
+
+function showGuideCtl() {
+  $("guide-ctl").classList.add("show");
+  clearTimeout(guideCtlTimer);
+  guideCtlTimer = window.setTimeout(() => $("guide-ctl").classList.remove("show"), 3000);
+}
+$("player").addEventListener("mousemove", showGuideCtl);
+
+// the voice follows the video; tick() fixes it only when it's clearly off
+function alignGuide() {
+  guide.currentTime = video.currentTime;
+  drifts = [];
+  lastResync = performance.now();
+}
+video.addEventListener("play", () => {
+  if (!hasGuide) return;
+  alignGuide();
+  guide.play().catch(() => {});
+});
+video.addEventListener("pause", () => guide.pause());
+video.addEventListener("seeked", () => hasGuide && alignGuide());
+
 async function play(m: Meta) {
   current = m;
   const text = m.has_lyrics ? await invoke<string | null>("lyrics", { id: m.id }) : null;
@@ -308,6 +368,9 @@ async function play(m: Meta) {
   $("plain").hidden = !(text && !m.synced);
   $("line-cur").textContent = text ? "" : "Letra não encontrada";
   $("line-next").textContent = "";
+  hasGuide = m.has_vocals;
+  $("guide-ctl").hidden = !hasGuide;
+  if (hasGuide) guide.src = `${mediaBase}/${m.id}/vocals.m4a`;
   video.src = `${mediaBase}/${m.id}/karaoke.mp4`;
   show("player");
   await getCurrentWindow().setFullscreen(true);
@@ -330,6 +393,11 @@ function tick() {
     const i = lineAt(lines, video.currentTime - current.lyrics_offset_ms / 1000);
     $("line-cur").textContent = lines[i]?.text ?? "";
     $("line-next").textContent = lines[i + 1]?.text ?? "";
+  }
+  if (hasGuide && !video.paused && !guide.paused) {
+    drifts.push(guide.currentTime - video.currentTime);
+    if (drifts.length > 30) drifts.shift();
+    if (shouldResync(drifts, performance.now(), lastResync)) alignGuide();
   }
   raf = requestAnimationFrame(tick);
 }
@@ -371,6 +439,10 @@ async function stop() {
   video.pause();
   video.removeAttribute("src");
   video.load();
+  guide.pause();
+  guide.removeAttribute("src");
+  guide.load();
+  hasGuide = false;
   current = null;
   await getCurrentWindow().setFullscreen(false);
   show("home");
@@ -383,7 +455,10 @@ function hint(text: string) {
   hintTimer = window.setTimeout(() => $("hint").classList.remove("on"), 1500);
 }
 
-video.onended = showScore;
+video.onended = () => {
+  guide.pause();
+  showScore();
+};
 video.onclick = () => (video.paused ? video.play() : video.pause());
 document.addEventListener("keydown", (e) => {
   if (!current) return;
@@ -398,6 +473,12 @@ document.addEventListener("keydown", (e) => {
     songs.set(current.id, current);
     hint(`Letra: ${(current.lyrics_offset_ms / 1000).toFixed(2)}s`);
     invoke("set_offset", { id: current.id, ms: current.lyrics_offset_ms }).catch(() => {});
+  } else if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key.toLowerCase() === "v") {
+    e.preventDefault(); // also when the slider has focus: ↑/↓ must always step 10% and show the hint
+    if (!hasGuide) return hint("Voz guia indisponível: baixe a música de novo");
+    if (e.key.toLowerCase() === "v") setGuide(guideLevel > 0 ? 0 : guideLast);
+    else setGuide(guideLevel + (e.key === "ArrowUp" ? 0.1 : -0.1));
+    showGuideCtl();
   }
 });
 
