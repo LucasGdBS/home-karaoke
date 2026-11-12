@@ -20,6 +20,8 @@ pub struct Meta {
     pub synced: bool,
     /// `vocals.m4a` exists (songs processed before the guide voice don't have it)
     pub has_vocals: bool,
+    /// The automatic lyrics sync already ran (it never touches a manual offset)
+    pub auto_synced: bool,
 }
 
 pub fn songs_dir(app: &AppHandle) -> PathBuf {

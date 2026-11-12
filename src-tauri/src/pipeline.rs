@@ -1,7 +1,7 @@
 //! Two-stage queue: one worker downloads (yt-dlp + lyrics), another removes vocals.
 //! So song B downloads while song A is being separated. One job per stage at a time,
 //! because separation already saturates the CPU.
-use crate::{library, lyrics, separate, tools, youtube};
+use crate::{library, lyrics, separate, sync, tools, youtube};
 use anyhow::{Context, ensure};
 use ort::session::Session;
 use std::fs;
@@ -58,6 +58,35 @@ async fn backfill(app: AppHandle) {
                 eprintln!("letra de {}: {e:#}", m.id);
             }
         }
+        auto_sync(&app, &m.id).await;
+    }
+}
+
+/// Sets the lyrics offset from the guide voice, once per song, never over a manual one.
+/// Needs synced lyrics and `vocals.m4a`, so it runs after separation or a late lyrics find.
+async fn auto_sync(app: &AppHandle, id: &str) {
+    let Some(m) = library::load(app, id) else { return };
+    if m.auto_synced || !m.has_lyrics || !m.synced || !m.has_vocals || m.lyrics_offset_ms != 0 {
+        return;
+    }
+    let Ok(dir) = library::dir(app, id) else { return };
+    let found = tauri::async_runtime::spawn_blocking(move || -> anyhow::Result<Option<i64>> {
+        let lines = sync::parse_lrc(&fs::read_to_string(dir.join("lyrics.lrc"))?);
+        Ok(sync::offset_ms(&sync::activity(&tools::ffmpeg(), &dir.join("vocals.m4a"))?, &lines))
+    })
+    .await
+    .map_err(anyhow::Error::from)
+    .and_then(|r| r);
+    match found {
+        Ok(off) => {
+            library::update(app, id, |m| {
+                if m.lyrics_offset_ms == 0 && let Some(off) = off {
+                    m.lyrics_offset_ms = off; // unless the user adjusted it meanwhile
+                }
+                m.auto_synced = true;
+            });
+        }
+        Err(e) => eprintln!("sincronia de {id}: {e:#}"), // retried next launch
     }
 }
 
@@ -80,7 +109,10 @@ async fn fetch_lyrics(app: &AppHandle, m: &library::Meta, dir: &std::path::Path)
         library::update(app, &m.id, |m| {
             m.has_lyrics = true;
             m.synced = synced;
+            m.lyrics_offset_ms = 0; // an offset belonged to the old lyrics
+            m.auto_synced = false;
         });
+        auto_sync(app, &m.id).await;
     }
     Ok(())
 }
@@ -160,6 +192,7 @@ async fn separate_worker(app: AppHandle, mut rx: UnboundedReceiver<String>) {
                     m.error = None;
                     m.has_vocals = true;
                 });
+                auto_sync(&app, &id).await;
             }
             Err(e) => fail(&app, &id, e),
         }

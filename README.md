@@ -6,6 +6,8 @@ Karaokê offline para festas: você busca uma música, o app baixa do YouTube, b
 **Buscar e baixar música** → escolha um resultado (entra na fila, pode escolher outras) → baixa o vídeo e a capa (yt-dlp) + letra → tira a voz (IA) → aparece na galeria.
 Enquanto uma música está na IA, a próxima já vai baixando. A barra no rodapé mostra o progresso; clique nela para ver a fila.
 
+A letra é sincronizada automaticamente com a voz da música (corrige o atraso de clipes com introdução); se ainda assim estiver fora, ajuste com `[` / `]`.
+
 No fim de cada música aparece a sua **nota** (sorteada, com suspense).
 
 ### Atalhos do player
@@ -14,7 +16,7 @@ No fim de cada música aparece a sua **nota** (sorteada, com suspense).
 | `espaço` | pausa / continua |
 | `↑` / `↓` | volume da **voz guia** (a voz original), de 10% em 10% |
 | `V` | liga / desliga a voz guia |
-| `[` / `]` | atrasa / adianta a letra 0,25s (fica salvo por música) |
+| `[` / `]` | letra 0,25s mais cedo / mais tarde (fica salvo por música) |
 | `Esc` | volta para a galeria |
 
 ## Dev
@@ -35,7 +37,7 @@ npm run tauri dev
 
 Testes:
 - `npm test`: parser de letra, sorteio da nota, sincronia da voz guia
-- `cargo test --manifest-path src-tauri/Cargo.toml`: STFT, limpeza de título, escolha de letra, cabeçalho `Range`
+- `cargo test --manifest-path src-tauri/Cargo.toml`: STFT, limpeza de título, escolha de letra, sincronia automática da letra, cabeçalho `Range`
 
 ## Releases
 
@@ -68,4 +70,4 @@ A versão do instalador é sempre a da tag (o `version` do `tauri.conf.json` só
 - **Música com erro**: abra a fila (barra do rodapé) para ver o motivo e clicar em "Tentar de novo".
 - **Música sem letra ou sem capa**: o app tenta de novo sozinho ao abrir.
 - **Sem voz guia**: músicas baixadas antes da voz guia não têm a voz guardada; apague e baixe de novo.
-- **Letra atrasada/adiantada**: `[` / `]` no player.
+- **Letra fora do tempo**: `[` adianta e `]` atrasa a letra no player; o ajuste manual nunca é sobrescrito pela sincronia automática.
