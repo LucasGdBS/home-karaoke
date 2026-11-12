@@ -37,7 +37,25 @@ Testes:
 - `npm test`: parser de letra, sorteio da nota, sincronia da voz guia
 - `cargo test --manifest-path src-tauri/Cargo.toml`: STFT, limpeza de título, escolha de letra, cabeçalho `Range`
 
-Release: dê push numa tag `v*` e o GitHub Actions gera `.msi`/`.exe` (Windows) e `.AppImage`/`.deb` (Linux).
+## Releases
+
+A pipeline `.github/workflows/instaladores.yml` gera os instaladores de Windows (`.exe`, `.msi`) e Linux (`.deb`, `.AppImage`).
+
+| Quando | O que acontece |
+|---|---|
+| Merge na `main` que mexe no app | Cria a próxima versão (maior tag `vX.Y.Z` com patch + 1, ex.: `v0.1.4` → `v0.1.5`) e publica a release com os instaladores |
+| Push de uma tag `vX.Y.Z` | Publica a release com exatamente essa versão |
+| PR para a `develop` que mexe no app | Roda os testes e o build; não publica nada |
+
+"Mexer no app" = alterar `src/`, `src-tauri/`, `index.html`, `package*.json`, `vite.config.ts`, `tsconfig.json`, `scripts/` ou a própria pipeline. Mudança só em documentação não dispara nada.
+
+**Subir major/minor:** crie a tag na mão e as versões automáticas seguem a partir dela:
+
+```sh
+git tag v1.0.0 && git push origin v1.0.0   # release v1.0.0; o próximo merge na main vira v1.0.1
+```
+
+A versão do instalador é sempre a da tag (o `version` do `tauri.conf.json` só vale para a primeira release, quando ainda não existe tag). Os instaladores não são assinados: no Windows, o SmartScreen avisa; clique em "Mais informações" → "Executar assim mesmo".
 
 ## Onde ficam as coisas
 `<app data>/` (Linux `~/.local/share/com.homekaraoke.app`, Windows `%APPDATA%\com.homekaraoke.app`):

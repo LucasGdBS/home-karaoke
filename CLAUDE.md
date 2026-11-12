@@ -28,4 +28,5 @@ npx tsc                                       # frontend typecheck
 - Testing UI in a plain browser: mock `window.__TAURI_INTERNALS__` (`invoke`, `transformCallback`, `metadata`) via Playwright `addInitScript`.
 
 ## Workflow
-- Feature branches off `develop`, PR into `develop`. Commit messages in Portuguese.
+- Feature branches off `develop`, PR into `develop`; `develop` → `main` is a release. Commit messages in Portuguese.
+- Releases are automatic (`.github/workflows/instaladores.yml`): a merge into `main` touching the app tags highest `vX.Y.Z` + 1 patch and publishes the installers; pushing a `vX.Y.Z` tag releases that exact version. Installer version comes from the tag, not `tauri.conf.json`. PRs into `develop` touching the app run tests + build (~40 min, Windows minutes count double).
