@@ -5,6 +5,7 @@ import { parseLrc, lineAt, type Line } from "./lrc.ts";
 import { randomScore, phrase, FLOP } from "./score.ts";
 import { drumroll, reveal } from "./sfx.ts";
 import { shouldResync } from "./guide.ts";
+import { move } from "./lineup.ts";
 
 type Meta = {
   id: string;
@@ -51,6 +52,36 @@ function iconButton(name: string, label: string, onclick: () => void) {
   b.append(icon(name));
   return b;
 }
+
+// ---------- in-app dialog (the native confirm/prompt/alert don't match the app or its language) ----------
+const askDialog = $<HTMLDialogElement>("ask");
+type Ask = { title: string; text?: string; input?: string; ok?: string; cancel?: boolean; danger?: boolean };
+/** Resolves to the typed text ("" without an input), or null when cancelled. */
+function ask(o: Ask): Promise<string | null> {
+  const input = $<HTMLInputElement>("ask-input");
+  $("ask-title").textContent = o.title;
+  $("ask-text").textContent = o.text ?? "";
+  $("ask-text").hidden = !o.text;
+  $("ask-label").textContent = o.input ?? "";
+  input.hidden = o.input === undefined;
+  input.placeholder = o.input ?? "";
+  input.value = "";
+  $("ask-ok").textContent = o.ok ?? "OK";
+  $("ask-ok").className = o.danger ? "primary danger" : "primary";
+  $("ask-cancel").hidden = o.cancel === false;
+  askDialog.returnValue = "";
+  askDialog.showModal();
+  // a destructive question starts on Cancelar, so a stray Enter doesn't delete
+  (o.input !== undefined ? input : o.danger ? $("ask-cancel") : $("ask-ok")).focus();
+  return new Promise((done) =>
+    askDialog.addEventListener("close", () => done(askDialog.returnValue === "ok" ? input.value : null), { once: true }),
+  );
+}
+const say = (title: string, text?: string) => ask({ title, text, cancel: false }).then(() => {});
+$("ask-cancel").onclick = () => askDialog.close();
+askDialog.onclick = (e) => {
+  if (e.target === askDialog) askDialog.close();
+};
 
 // ---------- setup ----------
 async function runSetup() {
@@ -151,19 +182,54 @@ function card(m: Meta) {
   }
 
   const body = el("div", "", "card-body");
-  body.append(info, iconButton("trash", `Apagar ${title}`, () => remove(m)));
-  c.append(cover, body);
+  body.append(info, iconButton("plus", `Adicionar ${title} à fila de cantores`, () => addTurn(m)));
+
+  const open = menuFor === m.id;
+  const dots = iconButton("dots", `Mais opções de ${title}`, () => {
+    menuFor = open ? null : m.id;
+    renderGallery();
+  });
+  dots.classList.add("card-menu");
+  dots.setAttribute("aria-expanded", String(open));
+  c.append(cover, body, dots);
+  if (open) {
+    const menu = el("div", "", "menu");
+    const del = button("", () => {
+      menuFor = null;
+      renderGallery();
+      remove(m);
+    });
+    del.append(icon("trash"), "Apagar música");
+    menu.append(del);
+    c.append(menu);
+  }
   return c;
 }
 
+// The card whose ⋮ menu is open; kept by id so a re-render (download progress) doesn't close it.
+let menuFor: string | null = null;
+document.addEventListener("click", (e) => {
+  if (menuFor && !(e.target as Element).closest(".card-menu, .menu")) {
+    menuFor = null;
+    renderGallery();
+  }
+});
+
 async function remove(m: Meta) {
-  if (!confirm(`Apagar "${songTitle(m)}"?`)) return;
+  const ok = await ask({
+    title: `Apagar "${songTitle(m)}"?`,
+    text: "Os arquivos da música são apagados deste computador.",
+    ok: "Apagar",
+    danger: true,
+  });
+  if (ok === null) return;
   try {
     await invoke("delete", { id: m.id });
     songs.delete(m.id);
+    lineup = lineup.filter((t) => t.id !== m.id);
     render();
   } catch (e) {
-    alert(errText(e));
+    say("Não consegui apagar", errText(e));
   }
 }
 
@@ -177,20 +243,9 @@ function queueItems() {
 function renderQueue() {
   const items = queueItems();
   const active = items.find((m) => BUSY.includes(m.status));
-  const errors = items.filter((m) => m.status === "error").length;
-  const waiting = items.filter((m) => m !== active && m.status !== "error").length;
-
-  if (active) {
-    $("status-title").textContent = `${STAGE[active.status]} · ${songTitle(active)}`;
-    $("status-sub").textContent = `${pct(active.id)} · ${eta(active.id)}`;
-    $("status-fill").style.width = pct(active.id);
-  } else {
-    $("status-title").textContent = "Nenhum download em andamento";
-    $("status-sub").textContent = errors ? `${errors} com erro, veja a fila` : "Tudo pronto";
-  }
-  $("status-track").hidden = !active;
-  $("status-count").hidden = waiting === 0;
-  $("status-count").textContent = `+${waiting} na fila`;
+  $("dl-count").hidden = items.length === 0;
+  $("dl-count").textContent = String(items.length);
+  $("open-downloads").setAttribute("aria-label", items.length ? `Downloads: ${items.length} na fila` : "Downloads");
 
   $("queue-empty").hidden = items.length > 0;
   $("queue-list").replaceChildren(
@@ -228,14 +283,85 @@ function renderQueue() {
 function render() {
   renderGallery();
   renderQueue();
+  renderLineup();
 }
 
-$("statusbar").onclick = () => {
-  const open = $("queue").hidden;
-  $("queue").hidden = !open;
-  $("statusbar").setAttribute("aria-expanded", String(open));
-  $("status-toggle").textContent = open ? "Fechar fila" : "Ver fila";
+// ---------- singers lineup (#5) ----------
+// shortcut: in memory only (a party's lineup lasts one night), persist it if people ask
+type Turn = { id: string; name: string }; // id, not Meta: song-update replaces the Meta objects
+let lineup: Turn[] = [];
+const turnLabel = (t: Turn) => {
+  const m = songs.get(t.id);
+  const song = m ? songTitle(m) : "";
+  return t.name ? `${t.name} — ${song}` : song;
 };
+
+async function addTurn(m: Meta) {
+  const name = await ask({ title: "Quem vai cantar?", text: songTitle(m), input: "Nome (opcional)", ok: "Adicionar à fila" });
+  if (name === null) return;
+  lineup.push({ id: m.id, name: name.trim() });
+  renderLineup();
+}
+
+function renderLineup() {
+  const [first, second] = lineup;
+  $("lineup-next").textContent = first ? `Próximo: ${turnLabel(first)}` : "Fila de cantores vazia";
+  $("lineup-after").textContent = second ? `Depois: ${turnLabel(second)}` : first ? "" : "Use o + nos cards para adicionar";
+  $("lineup-count").hidden = !first;
+  $("lineup-count").textContent = `${lineup.length} na fila`;
+  $("lineup-empty").hidden = !!first;
+  $("lineup-start").hidden = !first;
+  const reorder = (i: number, delta: number) => {
+    lineup = move(lineup, i, delta);
+    renderLineup();
+  };
+  $("lineup-list").replaceChildren(
+    ...lineup.map((t, i) => {
+      const label = turnLabel(t);
+      const up = iconButton("chevron", `Subir ${label}`, () => reorder(i, -1));
+      up.disabled = i === 0;
+      const down = iconButton("chevron", `Descer ${label}`, () => reorder(i, 1));
+      down.classList.add("flip");
+      down.disabled = i === lineup.length - 1;
+      const out = iconButton("close", `Tirar ${label} da fila`, () => {
+        lineup.splice(i, 1);
+        renderLineup();
+      });
+      const li = el("li");
+      li.append(el("span", `${i + 1}.`, "muted"), el("span", label, "turn"), up, down, out);
+      return li;
+    }),
+  );
+}
+
+/** Plays the first turn whose song still exists; false when the lineup ran out. */
+function nextTurn() {
+  for (let t = lineup.shift(); t; t = lineup.shift()) {
+    const m = songs.get(t.id);
+    if (m?.status === "ready") {
+      renderLineup();
+      play(m);
+      return true;
+    }
+  }
+  renderLineup();
+  return false;
+}
+$("lineup-start").onclick = () => {
+  showPanel(null);
+  nextTurn();
+};
+
+// The downloads and lineup popovers: opening one closes the other.
+function showPanel(which: "queue" | "lineup" | null) {
+  $("queue").hidden = which !== "queue";
+  $("lineup").hidden = which !== "lineup";
+  $("open-downloads").setAttribute("aria-expanded", String(which === "queue"));
+  $("statusbar").setAttribute("aria-expanded", String(which === "lineup"));
+  $("status-toggle").textContent = which === "lineup" ? "Fechar fila" : "Ver fila";
+}
+$("open-downloads").onclick = () => showPanel($("queue").hidden ? "queue" : null);
+$("statusbar").onclick = () => showPanel($("lineup").hidden ? "lineup" : null);
 
 async function enqueue(id: string, title: string, duration: number) {
   try {
@@ -243,7 +369,7 @@ async function enqueue(id: string, title: string, duration: number) {
     songs.set(m.id, m);
     render();
   } catch (e) {
-    alert(errText(e));
+    say("Não consegui colocar na fila", errText(e));
   }
 }
 
@@ -304,9 +430,9 @@ $("update-ytdlp").onclick = async () => {
   const b = $<HTMLButtonElement>("update-ytdlp");
   b.disabled = true;
   try {
-    alert(await invoke<string>("update_ytdlp"));
+    await say("Atualizar yt-dlp", await invoke<string>("update_ytdlp"));
   } catch (e) {
-    alert(errText(e));
+    await say("Não consegui atualizar o yt-dlp", errText(e));
   } finally {
     b.disabled = false;
   }
@@ -445,13 +571,38 @@ async function showScore() {
   $("score-phrase").textContent = phrase(final);
   reveal(final >= FLOP);
   $("score-done").hidden = false;
-  $("score-done").focus();
+  if (lineup.length) countdown(run);
+  else $("score-done").focus();
 }
 $("score-done").onclick = () => stop();
+$("score-now").onclick = () => startNext();
 
-async function stop() {
+const NEXT_IN = 10; // s: time to hand over the mic
+async function countdown(run: number) {
+  $("score-next").hidden = false;
+  $("score-now").hidden = false;
+  $("score-done").className = "ghost big";
+  $("score-now").focus();
+  for (let s = NEXT_IN; s > 0; s--) {
+    if (run !== scoreRun) return; // Esc / a button already moved on
+    $("score-next").textContent = `Próximo: ${turnLabel(lineup[0])} · começa em ${s}s`;
+    await sleep(1000);
+  }
+  if (run === scoreRun) startNext();
+}
+
+function startNext() {
+  teardown();
+  if (!nextTurn()) stop();
+}
+
+/** Clears the player without leaving it, so the next turn starts still in fullscreen. */
+function teardown() {
   scoreRun++;
   $("score").hidden = true;
+  $("score-next").hidden = true;
+  $("score-now").hidden = true;
+  $("score-done").className = "primary big";
   cancelAnimationFrame(raf);
   video.pause();
   video.removeAttribute("src");
@@ -461,6 +612,10 @@ async function stop() {
   guide.load();
   hasGuide = false;
   current = null;
+}
+
+async function stop() {
+  teardown();
   await getCurrentWindow().setFullscreen(false);
   show("home");
 }
@@ -484,7 +639,14 @@ video.onended = () => {
 };
 video.onclick = () => (video.paused ? video.play() : video.pause());
 document.addEventListener("keydown", (e) => {
-  if (!current) return;
+  if (!current) {
+    if (e.key === "Escape" && !dialog.open && !askDialog.open) {
+      menuFor = null;
+      renderGallery();
+      showPanel(null);
+    }
+    return;
+  }
   if (e.key === "Escape") stop();
   else if (!$("score").hidden) return; // the score screen only takes Esc (and Enter/Space on its button)
   else if (e.key === " ") {
