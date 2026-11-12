@@ -108,6 +108,23 @@ function renderGallery() {
   $("gallery").replaceChildren(...ready.map(card));
 }
 
+// Success needs no handling here: the backend's song-update re-renders the card with the badge.
+function findLyricsButton(m: Meta) {
+  const b = button("Sem letra · Buscar", async () => {
+    b.disabled = true;
+    b.textContent = "Buscando…";
+    try {
+      if (!(await invoke<boolean>("find_lyrics", { id: m.id }))) b.textContent = "Não achei · Tentar de novo";
+    } catch (e) {
+      b.textContent = "Erro · Tentar de novo";
+      b.title = `${e}`; // the installed Windows app has no console: hovering is the only way to see why
+    }
+    b.disabled = false;
+  }, "badge none find");
+  b.title = "Buscar a letra no LRCLIB de novo";
+  return b;
+}
+
 function card(m: Meta) {
   const title = songTitle(m);
   const c = el("article", "", "card");
@@ -126,12 +143,12 @@ function card(m: Meta) {
 
   const info = el("div", "", "card-info");
   info.append(el("strong", title), el("span", m.artist ?? "", "muted"));
-  const [cls, label] = !m.has_lyrics
-    ? ["none", "Sem letra"]
-    : m.synced
-      ? ["synced", "Letra sincronizada"]
-      : ["plain", "Letra sem sincronia"];
-  info.append(el("span", label, `badge ${cls}`));
+  if (m.has_lyrics) {
+    const [cls, label] = m.synced ? ["synced", "Letra sincronizada"] : ["plain", "Letra sem sincronia"];
+    info.append(el("span", label, `badge ${cls}`));
+  } else {
+    info.append(findLyricsButton(m));
+  }
 
   const body = el("div", "", "card-body");
   body.append(info, iconButton("trash", `Apagar ${title}`, () => remove(m)));

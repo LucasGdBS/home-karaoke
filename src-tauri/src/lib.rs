@@ -27,6 +27,7 @@ pub fn run() {
             library::delete,
             library::set_offset,
             library::lyrics,
+            pipeline::find_lyrics,
             stream::media_base,
         ])
         .run(tauri::generate_context!())
