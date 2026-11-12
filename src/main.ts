@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { parseLrc, lineAt, type Line } from "./lrc.ts";
+import { randomScore, phrase, FLOP } from "./score.ts";
+import { drumroll, reveal } from "./sfx.ts";
 
 type Meta = {
   id: string;
@@ -332,7 +334,39 @@ function tick() {
   raf = requestAnimationFrame(tick);
 }
 
+// ---------- score ----------
+let scoreRun = 0; // bumped by stop(), so a reveal still animating gives up
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function showScore() {
+  const run = ++scoreRun;
+  const final = randomScore();
+  const value = $("score-value");
+  $("score-phrase").textContent = "";
+  $("score-done").hidden = true;
+  $("score").hidden = false;
+  const seconds = 3.5;
+  drumroll(seconds);
+  const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const start = performance.now();
+  // numbers spin fast, then slow down like a reel
+  for (let delay = 40; performance.now() - start < seconds * 1000; delay *= 1.07) {
+    if (run !== scoreRun) return;
+    value.textContent = still ? "?" : String(30 + Math.floor(Math.random() * 71));
+    await sleep(delay);
+  }
+  if (run !== scoreRun) return;
+  value.textContent = String(final);
+  $("score-phrase").textContent = phrase(final);
+  reveal(final >= FLOP);
+  $("score-done").hidden = false;
+  $("score-done").focus();
+}
+$("score-done").onclick = () => stop();
+
 async function stop() {
+  scoreRun++;
+  $("score").hidden = true;
   cancelAnimationFrame(raf);
   video.pause();
   video.removeAttribute("src");
@@ -349,11 +383,12 @@ function hint(text: string) {
   hintTimer = window.setTimeout(() => $("hint").classList.remove("on"), 1500);
 }
 
-video.onended = stop;
+video.onended = showScore;
 video.onclick = () => (video.paused ? video.play() : video.pause());
 document.addEventListener("keydown", (e) => {
   if (!current) return;
   if (e.key === "Escape") stop();
+  else if (!$("score").hidden) return; // the score screen only takes Esc (and Enter/Space on its button)
   else if (e.key === " ") {
     e.preventDefault();
     video.paused ? video.play() : video.pause();

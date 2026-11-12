@@ -138,3 +138,11 @@ li.error .q-stage { color: var(--danger); }
 #plain { position: absolute; top: 5%; right: 3%; bottom: 5%; width: min(40%, 520px); overflow: auto; margin: 0; padding: 16px; background: rgba(11, 20, 38, 0.75); border-radius: 12px; font: 600 20px/1.5 Inter, system-ui, sans-serif; white-space: pre-wrap; }
 #hint { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); background: rgba(11, 20, 38, 0.85); padding: 6px 14px; border-radius: 8px; opacity: 0; transition: opacity 0.2s; }
 #hint.on { opacity: 1; }
+
+/* score reveal */
+#score { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: rgba(11, 20, 38, 0.94); text-align: center; padding: 16px; }
+#score p { margin: 0; }
+.score-label { font: 600 clamp(20px, 3vw, 32px) var(--heading); color: var(--muted); text-transform: uppercase; letter-spacing: 0.12em; }
+#score-value { font: 700 clamp(120px, 22vw, 260px) / 1 var(--heading); color: var(--accent); font-variant-numeric: tabular-nums; min-width: 2ch; }
+#score-phrase { font: 600 clamp(22px, 3.5vw, 40px) var(--heading); min-height: 1.3em; }
+#score-done { margin-top: 24px; }
