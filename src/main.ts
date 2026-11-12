@@ -6,6 +6,7 @@ import { parseLrc, lineAt, type Line } from "./lrc.ts";
 import { randomScore, phrase, FLOP } from "./score.ts";
 import { drumroll, reveal } from "./sfx.ts";
 import { shouldResync } from "./guide.ts";
+import { matches, isOffline } from "./search.ts";
 
 type Meta = {
   id: string;
@@ -273,31 +274,52 @@ function resultButton(r: SearchResult) {
   return b;
 }
 
+function resultRow(img: string, duration: number, title: string, sub: string, action: HTMLElement) {
+  const li = el("li");
+  const thumb = el("span", "", "thumb");
+  const i = el("img");
+  i.src = img;
+  i.alt = "";
+  i.onerror = () => i.remove();
+  thumb.append(i, el("span", fmt(duration), "duration"));
+  const info = el("span", "", "r-info");
+  info.append(el("strong", title), el("span", sub, "muted"));
+  li.append(thumb, info, action);
+  return li;
+}
+
+let searchSeq = 0; // a slow answer to an older query must not land in the newer list
 $("search-form").onsubmit = async (ev) => {
   ev.preventDefault();
   const q = $<HTMLInputElement>("q").value.trim();
   if (!q) return;
-  $("search-status").textContent = "Buscando…";
-  $("results").replaceChildren();
+  const seq = ++searchSeq;
+  const local = [...songs.values()]
+    .filter((m) => m.status === "ready" && matches(q, [songTitle(m), m.artist, m.title]))
+    .map((m) =>
+      resultRow(`${mediaBase}/${m.id}/cover.jpg`, m.duration, songTitle(m), m.artist ?? "", button("Cantar", () => {
+        dialog.close();
+        play(m);
+      }, "primary")),
+    );
+  const status = el("li", "Buscando no YouTube…", "r-status muted");
+  $("results").replaceChildren(
+    ...(local.length ? [el("li", "Na sua biblioteca", "r-head"), ...local, el("li", "No YouTube", "r-head")] : []),
+    status,
+  );
   try {
     const results = await invoke<SearchResult[]>("search", { q });
-    $("search-status").textContent = results.length ? "" : "Nada encontrado.";
-    $("results").replaceChildren(
-      ...results.map((r) => {
-        const li = el("li");
-        const thumb = el("span", "", "thumb");
-        const img = el("img");
-        img.src = `https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`;
-        img.alt = "";
-        thumb.append(img, el("span", fmt(r.duration), "duration"));
-        const info = el("span", "", "r-info");
-        info.append(el("strong", r.title), el("span", r.channel, "muted"));
-        li.append(thumb, info, resultButton(r));
-        return li;
-      }),
+    if (seq !== searchSeq) return;
+    status.textContent = results.length ? "" : "Nada encontrado no YouTube.";
+    status.hidden = results.length > 0;
+    $("results").append(
+      ...results.map((r) =>
+        resultRow(`https://i.ytimg.com/vi/${r.id}/mqdefault.jpg`, r.duration, r.title, r.channel, resultButton(r)),
+      ),
     );
   } catch (e) {
-    $("search-status").textContent = `Erro na busca: ${errText(e)}`;
+    const err = errText(e);
+    status.textContent = isOffline(err) ? "Sem conexão com a internet." : `Erro na busca: ${err}`;
   }
 };
 
