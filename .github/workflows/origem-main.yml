@@ -1,0 +1,25 @@
+# The main branch only takes PRs from develop. GitHub has no native setting for the PR's
+# source branch, so this check fails otherwise; the "Proteger main" ruleset requires it.
+name: Origem do PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize, edited] # edited: base changed to main
+
+jobs:
+  so-develop:
+    name: PR para main vem da develop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Conferir a branch de origem
+        env: # via env, never interpolated into the script: branch names are untrusted
+          HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          if [[ "$HEAD_REF" != develop || "$HEAD_REPO" != "$THIS_REPO" ]]; then
+            echo "::error::A main só aceita PR vindo da develop deste repositório (este vem de '$HEAD_REPO:$HEAD_REF')."
+            exit 1
+          fi
+          echo "OK: PR vem da develop."
