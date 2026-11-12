@@ -1,28 +1,85 @@
 # Builds the Windows (.msi / .exe) and Linux (.deb / .AppImage) installers.
-# - tag v*            → draft GitHub Release with every installer attached
-# - manual (Actions)  → installers as downloadable workflow artifacts (for testing, no release)
-# - PR touching CI    → same as manual, so pipeline changes get tested before merge
+#
+# - merge into main touching the app → next version (highest vX.Y.Z tag, patch + 1) is tagged
+#                                      and released with every installer attached
+# - push of a tag vX.Y.Z             → release with exactly that version (use it to bump
+#                                      major/minor; the automatic bumps continue from it)
+# - PR into develop touching the app → tests + build only, nothing is published
 name: Instaladores
 
 on:
   push:
-    tags: ["v*"]
-  workflow_dispatch:
-  pull_request:
+    branches: [main]
+    tags: ["v*"] # path filters don't apply to tag pushes
     paths:
+      - "src/**"
+      - "src-tauri/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - "tsconfig.json"
+      - "scripts/**"
       - ".github/workflows/instaladores.yml"
-      - "scripts/fetch-ffmpeg.*"
-      - "src-tauri/tauri.conf.json"
+  pull_request:
+    branches: [develop]
+    paths: # same list as above
+      - "src/**"
+      - "src-tauri/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - "tsconfig.json"
+      - "scripts/**"
+      - ".github/workflows/instaladores.yml"
 
 concurrency:
   group: instaladores-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }} # never cancel a release
 
 jobs:
+  versao:
+    name: Versão
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the new tag
+    outputs:
+      release: ${{ steps.v.outputs.release }}
+      tag: ${{ steps.v.outputs.tag }}
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all tags
+      - id: v
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            last=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+            if [[ -z "$last" ]]; then
+              tag="v$(jq -r .version src-tauri/tauri.conf.json)" # first release
+            else
+              IFS=. read -r major minor patch <<< "${last#v}"
+              tag="v$major.$minor.$((patch + 1))"
+            fi
+            # pushed with GITHUB_TOKEN, so it doesn't start this workflow a second time
+            git tag "$tag" "$GITHUB_SHA"
+            git push origin "$tag"
+          fi
+          echo "Versão: $tag"
+          { echo "release=true"; echo "tag=$tag"; echo "version=${tag#v}"; } >> "$GITHUB_OUTPUT"
+
   build:
     name: ${{ matrix.name }}
+    needs: versao
     permissions:
-      contents: write # create the draft release on tags
+      contents: write # upload the installers to the release
     strategy:
       fail-fast: false
       matrix:
@@ -66,30 +123,23 @@ jobs:
       - run: npm test
       - run: cargo test --manifest-path src-tauri/Cargo.toml
 
-      - name: Build + release (rascunho)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Build (PR, sem publicar)
+        if: needs.versao.outputs.release != 'true'
+        run: npm run tauri build
+
+      - name: Versão do app = versão da tag
+        if: needs.versao.outputs.release == 'true'
+        shell: bash
+        run: echo '{"version":"${{ needs.versao.outputs.version }}"}' > src-tauri/version.json
+
+      - name: Build + release
+        if: needs.versao.outputs.release == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Karaoke Home ${{ github.ref_name }}
+          tagName: ${{ needs.versao.outputs.tag }}
+          releaseName: Karaoke Home ${{ needs.versao.outputs.tag }}
           releaseBody: Baixe o instalador do seu sistema em Assets.
-          releaseDraft: true
-
-      - name: Build
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: npm run tauri build
-
-      - name: Publicar instaladores (artefato)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: instaladores-${{ matrix.name }}
-          path: |
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
-          if-no-files-found: error
-          retention-days: 14
+          releaseDraft: false
+          args: --config src-tauri/version.json
