@@ -86,6 +86,9 @@ pub fn clean_title(title: &str) -> String {
             lower.replace_range(i..i + n.len(), " ");
         }
     }
+    // Some YouTube titles use decomposed accents (NFD: "e" + U+0301) and LRCLIB finds nothing
+    // for them; it ignores accents, so dropping the loose combining marks ("Ceu") matches.
+    s.retain(|c| !('\u{0300}'..='\u{036F}').contains(&c));
     s.split(|c: char| c.is_whitespace() || c == '-' || c == '–' || c == '"')
         .filter(|w| !w.is_empty())
         .collect::<Vec<_>>()
@@ -101,6 +104,7 @@ mod tests {
         let cases = [
             ("Queen – Bohemian Rhapsody (Official Video Remastered)", "Queen Bohemian Rhapsody"),
             ("Marília Mendonça - Supera [Clipe Oficial]", "Marília Mendonça Supera"),
+            ("Charlie Brown Jr - Ce\u{301}u Azul", "Charlie Brown Jr Ceu Azul"), // NFD accent
             ("Ed Sheeran - Perfect (Official Music Video) | HD", "Ed Sheeran Perfect"),
             ("Shakira - Waka Waka ft. Freshlyground", "Shakira Waka Waka"),
             ("Evidências - Chitãozinho & Xororó (Letra)", "Evidências Chitãozinho & Xororó"),
